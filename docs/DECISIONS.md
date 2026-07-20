@@ -288,6 +288,50 @@ milestone, and reaches full section 6.1 coverage at M8. A stub subcommand that e
 
 ---
 
+## D031 - trtexec percentile parsing: two overwrite bugs from one output format
+
+**Date:** 2026-07-20
+**Found:** by reading the first real bench.json, not by a test.
+
+trtexec prints five timing sections, each on its own line and each carrying its own
+percentiles:
+
+```
+Latency:          min = 1.87 ms, ..., median = 4.32 ms, percentile(99%) = 6.56 ms
+Enqueue Time:     min = 0.68 ms, ...
+H2D Latency:      min = 0.12 ms, ...
+GPU Compute Time: min = 1.71 ms, ..., median = 4.15 ms
+D2H Latency:      min = 0.005 ms, ..., percentile(99%) = 0.025 ms
+Total GPU Compute Time: 2.9848 s
+```
+
+**Bug 1.** Scanning the whole output for `percentile\(NN%\)` returns the last section's
+values, which is D2H Latency: a device-to-host copy roughly 200x faster than end-to-end
+latency. The first bench.json therefore reported p50 4.52 ms with p95 0.021 ms and p99
+0.025 ms, percentiles smaller than the median, which is impossible.
+
+**Bug 2.** After fixing that by parsing per section, `gpu_compute_ms` came out zero.
+`Total GPU Compute Time: 2.9848 s` matches the same label as the real GPU Compute Time
+section but carries one summed value and no statistics, so it overwrote the real section
+with an empty one.
+
+**Fixes:** percentiles and statistics are read from the same line as their section label; a
+section with no statistics is skipped, which rejects the Total line semantically rather than
+by position; and the parser asserts percentiles are monotonically non-decreasing, so a future
+format change fails loudly instead of reporting numbers that cannot be true.
+
+Also now captured: trtexec's own `coefficient of variance` warning. It read 28 to 30 percent
+here, which is worth surfacing because it means the p99 is not comparable between runs. The
+cause in this instance was benign: a training run was using the GPU concurrently.
+
+Both bugs are pinned by `tests/test_export.py` against verbatim trtexec output.
+
+The pattern is the same one D030 showed in the GUI: a later match silently overwriting an
+earlier one. Worth watching for anywhere a parser scans a whole document for a repeated
+pattern.
+
+---
+
 ## D030 - A mouse wheel over the FieldMapTable silently rewrote a confirmed mapping
 
 **Date:** 2026-07-20

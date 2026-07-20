@@ -30,15 +30,32 @@ CALIBRATION_IMAGES = 512
 #: ctrl combined. 33 ms is one frame at 30 fps.
 FRAME_BUDGET_MS = 33.0
 
-#: trtexec emits latency percentiles in this shape:
-#:   Latency: min = 1.2 ms, max = 3.4 ms, mean = 1.5 ms, median = 1.4 ms, percentile(99%) = 2.1 ms
-_RE_LATENCY = re.compile(
-    r"Latency:.*?min\s*=\s*([\d.]+)\s*ms.*?max\s*=\s*([\d.]+)\s*ms.*?"
-    r"mean\s*=\s*([\d.]+)\s*ms.*?median\s*=\s*([\d.]+)\s*ms",
-    re.IGNORECASE,
+# trtexec prints several timing sections, each on its own line and each carrying its own
+# percentiles:
+#
+#   Latency:          min = 1.87 ms, ..., median = 4.32 ms, percentile(99%) = 6.56 ms
+#   Enqueue Time:     min = 0.68 ms, ...
+#   H2D Latency:      min = 0.12 ms, ...
+#   GPU Compute Time: min = 1.71 ms, ...
+#   D2H Latency:      min = 0.005 ms, ..., percentile(99%) = 0.025 ms
+#
+# Scanning the whole output for "percentile(NN%)" therefore returns the LAST section's values,
+# which is D2H Latency: a device-to-host copy roughly 200x faster than the end-to-end latency.
+# That produced a report where p99 was smaller than p50, which is impossible. Percentiles are
+# now read from the same line as their section label.
+_RE_SECTION = re.compile(
+    r"^.*?\b(?P<name>Latency|Enqueue Time|H2D Latency|GPU Compute Time"
+    r"|D2H Latency):\s*(?P<body>.*)$",
+    re.MULTILINE,
 )
-_RE_PERCENTILE = re.compile(r"percentile\((\d+(?:\.\d+)?)%\)\s*=\s*([\d.]+)\s*ms", re.IGNORECASE)
+_RE_STAT = re.compile(r"\b(min|max|mean|median)\s*=\s*([\d.eE+-]+)\s*ms", re.IGNORECASE)
+_RE_PERCENTILE = re.compile(
+    r"percentile\((\d+(?:\.\d+)?)%\)\s*=\s*([\d.eE+-]+)\s*ms", re.IGNORECASE
+)
 _RE_THROUGHPUT = re.compile(r"Throughput:\s*([\d.]+)\s*qps", re.IGNORECASE)
+#: trtexec warns when timing is unstable. Worth carrying through: a high variance
+#: means the p99 is not a number to compare across runs.
+_RE_VARIANCE = re.compile(r"coefficient of variance\s*=\s*([\d.]+)%", re.IGNORECASE)
 
 
 @dataclass
@@ -75,6 +92,10 @@ class BenchResult:
     median_ms: float = 0.0
     percentiles: dict[str, float] = field(default_factory=dict)
     throughput_qps: float = 0.0
+    #: Median pure compute time, excluding host/device transfers.
+    gpu_compute_ms: float = 0.0
+    #: trtexec's coefficient of variance for compute time, in percent.
+    compute_variance_pct: float = 0.0
 
     @property
     def p50(self) -> float:
@@ -98,6 +119,8 @@ class BenchResult:
             "p95_ms": self.p95,
             "p99_ms": self.p99,
             "percentiles": self.percentiles,
+            "gpu_compute_ms": self.gpu_compute_ms,
+            "compute_variance_pct": self.compute_variance_pct,
             "throughput_qps": self.throughput_qps,
         }
 
@@ -176,23 +199,61 @@ def build_engine(
 
 
 def parse_bench(output: str, engine: Path) -> BenchResult:
-    """Parse trtexec's latency report (section 11)."""
+    """Parse trtexec's latency report (section 11).
+
+    Reads each timing section separately and reports the end-to-end "Latency" section, which
+    is what a frame budget is about: it includes the host-to-device copy, the compute, and the
+    device-to-host copy. "GPU Compute Time" is captured alongside because the gap between the
+    two is the transfer overhead, which is worth seeing when a model is close to budget.
+    """
     result = BenchResult(engine=engine)
+    sections: dict[str, dict[str, Any]] = {}
 
-    match = _RE_LATENCY.search(output)
-    if match:
-        result.min_ms = float(match.group(1))
-        result.max_ms = float(match.group(2))
-        result.mean_ms = float(match.group(3))
-        result.median_ms = float(match.group(4))
-
-    for percentile, value in _RE_PERCENTILE.findall(output):
+    for match in _RE_SECTION.finditer(output):
+        name = match.group("name")
+        body = match.group("body")
+        stats = {key.lower(): float(value) for key, value in _RE_STAT.findall(body)}
+        # A section is only real if it carries statistics. trtexec also prints
+        # "Total GPU Compute Time: 3.00249 s", which matches the same label but holds a single
+        # summed value; without this guard it overwrites the real GPU Compute Time section
+        # with an empty one and the reported compute time becomes zero.
+        if not stats:
+            continue
         # trtexec reports "percentile(99%)"; normalise 99.0 and 99 to the same key.
-        result.percentiles[str(int(float(percentile)))] = float(value)
+        stats["percentiles"] = {
+            str(int(float(p))): float(v) for p, v in _RE_PERCENTILE.findall(body)
+        }
+        sections[name] = stats
+
+    latency = sections.get("Latency")
+    if latency:
+        result.min_ms = latency.get("min", 0.0)
+        result.max_ms = latency.get("max", 0.0)
+        result.mean_ms = latency.get("mean", 0.0)
+        result.median_ms = latency.get("median", 0.0)
+        result.percentiles = latency.get("percentiles", {})
+
+    compute = sections.get("GPU Compute Time")
+    if compute:
+        result.gpu_compute_ms = compute.get("median", 0.0)
 
     throughput = _RE_THROUGHPUT.search(output)
     if throughput:
         result.throughput_qps = float(throughput.group(1))
+
+    variance = _RE_VARIANCE.search(output)
+    if variance:
+        result.compute_variance_pct = float(variance.group(1))
+
+    # Percentiles are monotonically non-decreasing by definition. A violation means the parse
+    # picked values from more than one section, which is exactly the bug this rewrite fixes,
+    # so it is worth catching rather than reporting numbers that cannot be true.
+    ordered = [result.percentiles[k] for k in sorted(result.percentiles, key=int)]
+    if ordered and (result.median_ms > ordered[0] or ordered != sorted(ordered)):
+        raise ValueError(
+            f"parsed percentiles are not monotonic (median {result.median_ms}, "
+            f"percentiles {result.percentiles}). trtexec's output format may have changed."
+        )
 
     return result
 
