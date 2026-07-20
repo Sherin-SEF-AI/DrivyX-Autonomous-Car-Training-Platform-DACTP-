@@ -29,13 +29,37 @@ Two models trained from IDD data:
 | M1 Shell: GUI, theme, monitor, job queue | Complete |
 | M2 Segmentation data: masks, LUT, shards | Complete |
 | M3 Multimodal: inventory, sync, waypoints, QC | Complete |
-| M4 Segmentation training | Probe, SIGINT, and resume verified; 3 epoch smoke run in progress |
-| M5 Control training | Code complete, not yet run end to end |
-| M6 Evaluation | Not started |
-| M7 Export and benchmark | Not started |
+| M4 Segmentation training | Probe, SIGINT, and resume verified; 3 epoch smoke run outstanding |
+| M5 Control training | Complete, not yet run end to end |
+| M6 Evaluation | Complete, first measurements below |
+| M7 Export and benchmark | Complete, first measurements below |
 | M8 Preview and polish | Not started |
 
-Tests: 258 CPU tests and 10 device tests pass. Lint (ruff) is clean.
+Tests: 281 CPU tests and 11 device tests pass. Lint (ruff) is clean.
+
+## First measurements
+
+Produced on a partially trained checkpoint, so the accuracy numbers are early rather than
+final. They are recorded because they show the whole path works end to end.
+
+```
+eval-seg   mIoU 0.4189, pixel accuracy 0.7306 over 200 validation images
+           per class IoU: drivable 0.729   background 0.789   structure 0.377
+                          alt_drivable 0.373  vehicle 0.319   twowheeler 0.288
+                          nondrivable 0.241   vru 0.235
+
+export     PIDNet-S to ONNX opset 17 (simplified), then a TensorRT fp16 engine of 16.6 MB
+
+parity     torch 46.019 mIoU against engine 45.951, delta 0.068
+           tolerance is 1.0, so the engine agrees with the model it was built from
+
+bench      p50 4.31 ms, p90 4.57 ms, p95 6.08 ms, p99 6.64 ms, 258 qps
+           GPU compute 4.14 ms of that, the rest is host and device transfer
+           against a 33 ms frame budget
+```
+
+The benchmark reported a 28 percent coefficient of variance, which trtexec flags as unstable
+timing. The cause here was a training run using the GPU at the same time.
 
 ## Data prepared so far
 
@@ -89,6 +113,10 @@ drivyx mm-confirm [--yes]                accept the discovered column mappings w
 drivyx mm-label [--route R]              waypoint parquet datasets plus QC artifacts
 drivyx train-seg --config C [--probe] [--resume RUN] [--set KEY=VALUE]
 drivyx train-ctrl --config C [--seg-run RUN] [--resume RUN]
+drivyx eval-seg --run RUN [--ckpt best|last] [--limit N]
+drivyx eval-ctrl --run RUN [--ckpt best|last]
+drivyx export --model seg|ctrl --run RUN [--precision fp16|int8]
+drivyx bench [--engine PATH] [--iterations N]
 ```
 
 Every subcommand writes JSON to stdout and logs to stderr, so output can be piped without being corrupted by log lines.
@@ -99,7 +127,18 @@ Every subcommand writes JSON to stdout and logs to stderr, so output can be pipe
 make gui        # or: drivyx-gui
 ```
 
-Six workspaces: DATA, LABEL, TRAIN, EVAL, EXPORT, SYSTEM. The GUI runs each action as a `drivyx` subprocess, tails the run's `events.jsonl` for live plots, and reads tegrastats for the status bar. It does not import torch, which is what keeps launch under one second.
+Six workspaces, all functional:
+
+| Workspace | Contents |
+|---|---|
+| DATA | verification report, preparation triggers, LUT colour table, class histogram |
+| LABEL | multimodal discovery, field map with the evidence behind each proposal, QC gallery |
+| TRAIN | configuration form generated from the schema, probe schedule, live curves, epoch table |
+| EVAL | run picker, metrics tables, confusion matrix, overlay browser |
+| EXPORT | precision picker, queued export and benchmark, frame budget indicator |
+| SYSTEM | environment report, live telemetry charts, diagnostics to clipboard |
+
+The GUI runs each action as a `drivyx` subprocess, tails the run's `events.jsonl` for live plots, and reads tegrastats for the status bar. It does not import torch, which is what keeps launch under one second.
 
 Cancelling a job sends SIGINT. The trainer traps it, finishes the current step, writes a checkpoint, records `status=interrupted`, and exits 130. SIGKILL follows only after a 30 second grace period.
 
