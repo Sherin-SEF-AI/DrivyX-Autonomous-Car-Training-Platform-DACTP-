@@ -1,0 +1,14 @@
+# Filesystem layout for DRIVYX (CLAUDE.md section 4).
+#
+# data_root defaults to /mnt/nvme/idd. On this device the root filesystem is itself the
+# NVMe (nvme0n1p1, 930G), so /mnt/nvme/idd is a real directory on the NVMe rather than a
+# separate mount. See docs/DECISIONS.md D005.
+#
+# Every other path is derived from data_root unless explicitly overridden here.
+# Override any entry to relocate that subtree.
+
+data_root: /mnt/nvme/idd
+
+# Where stage_data.sh looks for the downloaded IDD archives. Copied into <data_root>/raw,
+# never deleted (section 4: "original archives (never deleted by code)").
+archive_source: /home/blurabbit/Downloads

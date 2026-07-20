@@ -1,0 +1,18 @@
+# Waypoint predictor training (CLAUDE.md section 9.2).
+#
+# "Loss: L1 on waypoints. Optim AdamW 3e-4, cosine to 1e-5, batch 256, epochs 60."
+#
+# Override from the CLI without editing this file:
+#   drivyx train-ctrl --config configs/ctrl_waypoint.yaml --set epochs=3
+
+kind: ctrl
+tag: default
+seed: 55321
+
+epochs: 60
+batch_size: 256
+
+# AdamW 3e-4, cosine annealed to 1e-5.
+lr: 0.0003
+min_lr: 0.00001
+weight_decay: 0.01

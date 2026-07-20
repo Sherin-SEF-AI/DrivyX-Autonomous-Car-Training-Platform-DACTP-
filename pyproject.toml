@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drivyx"
+version = "0.1.0"
+description = "Perception and waypoint-control training platform for Indian driving data"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+
+# torch and torchvision are deliberately NOT listed here. They must come from the CUDA
+# wheel index chosen by scripts/setup_orin.sh (docs/DECISIONS.md D002); leaving them as
+# dependencies would let a plain `pip install .` silently pull CPU torch from PyPI, which
+# CLAUDE.md section 3 forbids. setup_orin.sh installs them first, then installs this package.
+dependencies = [
+    "numpy==1.26.4",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "opencv-python-headless>=4.9",
+    "pillow>=10.2",
+    "tqdm>=4.66",
+    "pandas>=2.2",
+    "pyarrow>=15.0",
+    "scipy>=1.12",
+    "webdataset>=0.2.86",
+    "onnx>=1.16",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PyQt6>=6.6",
+    "pyqtgraph>=0.13",
+    "jetson-stats>=4.2",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+drivyx = "drivyx.cli:main"
+# A console script, not a gui-script: the GUI's own logging goes to stderr and must stay
+# visible when it is launched from a terminal.
+drivyx-gui = "drivyx.gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# blender.qss is loaded at runtime by theme/tokens.py and must ship with the package.
+drivyx = ["gui/theme/*.qss"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Section 13: CPU-only by default so the engine is testable off-device; `device` selects
+# the Orin-only tests.
+addopts = "-m 'not device' -q"
+markers = [
+    "device: requires the Jetson device (CUDA, real data, or TensorRT)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "RUF",  # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately assert on private helpers and use long literal fixtures.
+"tests/*" = ["E501"]

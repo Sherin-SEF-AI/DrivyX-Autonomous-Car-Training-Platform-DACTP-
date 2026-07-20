@@ -1,0 +1,68 @@
+# PIDNet-S segmentation training (CLAUDE.md section 9.1).
+#
+# Every value here is the spec's stated value. Validated by
+# src/drivyx/train/config.py:SegConfig, which is also what the TRAIN workspace generates its
+# form from, so an unknown key here is rejected rather than silently ignored.
+#
+# Override from the CLI without editing this file:
+#   drivyx train-seg --config configs/seg_pidnet_s.yaml --set epochs=3
+
+kind: seg
+tag: default
+seed: 55321
+
+num_classes: 8
+batch_size: 16
+epochs: 220
+
+# Section 9.1: track best val mIoU every 5 epochs.
+val_every: 5
+overlays_per_val: 4
+
+data:
+  # Train crop 768x384 from images resized short-side 512.
+  crop_width: 768
+  crop_height: 384
+  # Val at full resized 1024x512.
+  val_width: 1024
+  val_height: 512
+  # Section 3's Orin DataLoader settings. pin_memory is False because the Orin's memory is
+  # unified: pinning would copy for no benefit.
+  num_workers: 8
+  prefetch_factor: 4
+  persistent_workers: true
+  pin_memory: false
+
+aug:
+  hflip_prob: 0.5
+  scale_min: 0.5
+  scale_max: 2.0
+  brightness: 0.4
+  contrast: 0.4
+  saturation: 0.4
+
+loss:
+  # OHEM cross entropy, thresh on the true-class probability.
+  ohem_thresh: 0.9
+  ohem_min_kept: 26000
+  # w = 1/log(1.02 + freq), capped at 10x the minimum.
+  class_weight_cap: 10.0
+  # PIDNet's standard weighting.
+  aux_weight: 0.4
+  boundary_weight: 20.0
+  boundary_aware_weight: 1.0
+
+optim:
+  # SGD momentum 0.9, lr 0.01 poly decay power 0.9, weight decay 5e-4.
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  poly_power: 0.9
+  warmup_iters: 0
+
+# Section 9.1's --probe sizes.
+probe_sizes:
+  - [640, 320]
+  - [768, 384]
+  - [1024, 512]
+probe_batches: 40

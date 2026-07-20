@@ -1,0 +1,108 @@
+/* DRIVYX Blender-style theme.
+ *
+ * The first block is CLAUDE.md section 12.2's baseline QSS verbatim. Everything after it
+ * extends that baseline without contradicting it (section 12.2: "extend, do not contradict").
+ * %NAME% placeholders are substituted by theme/tokens.py.
+ */
+
+/* --- section 12.2 baseline ---------------------------------------------------------- */
+
+QWidget { background: %BG_AREA%; color: %TEXT%; font-family: %FONT_UI%; }
+QMainWindow, QDialog { background: %BG_WINDOW%; }
+QPushButton { background: %WIDGET%; border: 1px solid %BORDER%; border-radius: 4px;
+              padding: 4px 12px; }
+QPushButton:hover { background: %WIDGET_HI%; }
+QPushButton:pressed, QPushButton[primary="true"] { background: %ACCENT%; color: white; }
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: %BG_INPUT%;
+              border: 1px solid %BORDER%; border-radius: 4px; padding: 3px 6px; }
+QTabBar::tab { background: %BG_HEADER%; padding: 6px 14px; border: 1px solid %BORDER%;
+               border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+QTabBar::tab:selected { background: %BG_AREA%; color: %TEXT%; }
+QProgressBar { background: %BG_INPUT%; border: 1px solid %BORDER%; border-radius: 4px;
+               text-align: center; }
+QProgressBar::chunk { background: %ACCENT%; border-radius: 3px; }
+QGroupBox { border: 1px solid %BORDER%; border-radius: 4px; margin-top: 10px; }
+QPlainTextEdit#logConsole { background: %BG_WINDOW%; font-family: %FONT_MONO%; }
+
+/* --- extensions --------------------------------------------------------------------- */
+
+QWidget { font-size: %FONT_UI_SIZE%; }
+
+QPushButton:disabled { background: %BG_PANEL%; color: %TEXT_DIM%; border-color: %BORDER%; }
+QPushButton[primary="true"]:hover { background: %ACCENT_HOVER%; }
+QPushButton[primary="true"]:disabled { background: %BG_PANEL%; color: %TEXT_DIM%; }
+
+/* Panel: the Blender N-panel pattern (section 12.3). Header row is a flat clickable strip. */
+QFrame#panel { background: %BG_PANEL%; border: %BORDER_W% solid %BORDER%;
+               border-radius: %RADIUS%; }
+QWidget#panelHeader { background: %BG_HEADER%; border-top-left-radius: %RADIUS%;
+                      border-top-right-radius: %RADIUS%; }
+QWidget#panelHeader:hover { background: %WIDGET%; }
+QLabel#panelTitle { background: transparent; font-weight: bold; }
+QToolButton#panelArrow { background: transparent; border: none; color: %TEXT_DIM%;
+                         padding: 0px; }
+QWidget#panelBody { background: %BG_PANEL%; border-bottom-left-radius: %RADIUS%;
+                    border-bottom-right-radius: %RADIUS%; }
+
+/* Every numeric readout is monospace (section 12.1). */
+QLabel[mono="true"] { font-family: %FONT_MONO%; font-size: %FONT_MONO_SIZE%;
+                      background: transparent; }
+QLabel[dim="true"] { color: %TEXT_DIM%; background: transparent; }
+QLabel { background: transparent; }
+
+/* Status bar readouts (section 12.3). */
+QStatusBar { background: %BG_HEADER%; border-top: %BORDER_W% solid %BORDER%; }
+QStatusBar::item { border: none; }
+QStatusBar QLabel { font-family: %FONT_MONO%; font-size: %FONT_MONO_SIZE%; }
+
+/* Workspace tab bar (section 12.3). */
+QTabWidget::pane { border: %BORDER_W% solid %BORDER%; background: %BG_AREA%; }
+QTabBar::tab:!selected { color: %TEXT_DIM%; }
+QTabBar::tab:!selected:hover { background: %WIDGET%; color: %TEXT%; }
+
+/* Device badge and the MAXN banner (section 12.3). */
+QLabel#deviceBadge { font-family: %FONT_MONO%; font-size: %FONT_MONO_SIZE%;
+                     color: %TEXT_DIM%; padding: 2px 8px; }
+QLabel#maxnBanner { background: %WARN%; color: %BG_WINDOW%; font-weight: bold;
+                    padding: 4px 10px; border-radius: %RADIUS%; }
+
+/* Tables: LUT swatches, metrics, field maps. */
+QTableWidget, QTableView { background: %BG_INPUT%; gridline-color: %BORDER%;
+                           border: %BORDER_W% solid %BORDER%; border-radius: %RADIUS%; }
+QTableWidget::item:selected, QTableView::item:selected { background: %ACCENT%; color: white; }
+QHeaderView::section { background: %BG_HEADER%; color: %TEXT_DIM%; padding: 4px;
+                       border: none; border-right: %BORDER_W% solid %BORDER%;
+                       border-bottom: %BORDER_W% solid %BORDER%; }
+QTableCornerButton::section { background: %BG_HEADER%; border: none; }
+
+/* Job cards (section 12.3). */
+QFrame#jobCard { background: %BG_PANEL%; border: %BORDER_W% solid %BORDER%;
+                 border-radius: %RADIUS%; }
+QLabel#jobCommand { font-family: %FONT_MONO%; font-size: %FONT_MONO_SIZE%;
+                    color: %TEXT_DIM%; }
+
+/* Scrollbars: flat, no arrows, matching Blender's minimal chrome. */
+QScrollBar:vertical { background: %BG_WINDOW%; width: 10px; margin: 0; }
+QScrollBar:horizontal { background: %BG_WINDOW%; height: 10px; margin: 0; }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: %WIDGET%; border-radius: 3px; min-height: 24px; min-width: 24px; }
+QScrollBar::handle:hover { background: %WIDGET_HI%; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+/* Splitters between the N-panel column, main view, and log dock. */
+QSplitter::handle { background: %BG_WINDOW%; }
+QSplitter::handle:horizontal { width: 4px; }
+QSplitter::handle:vertical { height: 4px; }
+
+QComboBox::drop-down { border: none; width: 16px; }
+QComboBox QAbstractItemView { background: %BG_INPUT%; border: %BORDER_W% solid %BORDER%;
+                              selection-background-color: %ACCENT%; }
+
+QCheckBox { background: transparent; }
+QCheckBox::indicator { width: 13px; height: 13px; background: %BG_INPUT%;
+                       border: %BORDER_W% solid %BORDER%; border-radius: 3px; }
+QCheckBox::indicator:checked { background: %ACCENT%; }
+
+QToolTip { background: %BG_HEADER%; color: %TEXT%; border: %BORDER_W% solid %BORDER%;
+           padding: 3px; }

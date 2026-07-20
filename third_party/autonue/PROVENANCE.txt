@@ -1,0 +1,21 @@
+Vendored from: https://github.com/AutoNUE/public-code
+Commit:        5d9a93beb176b03dd32c79ce050d0fbddc9acd00
+Commit date:   2021-02-15
+Vendored on:   2026-07-17
+Vendored by:   DRIVYX (CLAUDE.md section 7 requires a vendored, patched copy)
+
+Files taken (only what gen-masks needs; the upstream repo is 59 MB and most of it is
+domain-adaptation training code that DRIVYX does not use):
+
+  preperation/createLabels.py     entry point, run as a subprocess by data/masks.py
+  preperation/json2labelImg.py    polygon -> label PNG rasteriser
+  preperation/json2instanceImg.py imported by createLabels.py at module scope
+  helpers/anue_labels.py          the label table; build-lut resolves names against it
+  helpers/annotation.py           JSON annotation reader
+
+LICENSE: the upstream repository contains no LICENSE file and its README states no terms.
+The code is published publicly by the AutoNUE challenge organisers for use with the IDD
+dataset. This is recorded here because the absence of an explicit licence is a fact a
+downstream consumer of DRIVYX needs to know. See docs/DECISIONS.md D018.
+
+Every modification to these files is documented line by line in third_party/PATCHES.md.
