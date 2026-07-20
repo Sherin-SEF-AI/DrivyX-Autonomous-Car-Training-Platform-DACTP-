@@ -501,6 +501,187 @@ def _register_train_ctrl(sub: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=_cmd_train_ctrl)
 
 
+# --- eval-seg / eval-ctrl (M6) -----------------------------------------------------------
+
+
+def _cmd_eval_seg(args: argparse.Namespace) -> int:
+    """Per-class IoU, mIoU, confusion matrix, and overlays (sections 6.1, 10)."""
+    from drivyx.eval.seg_eval import evaluate_seg
+    from drivyx.jobs.run_dir import RunContext, resolve_run
+    from drivyx.torch_setup import configure
+
+    paths = _resolve_paths(args)
+    configure()
+    run = resolve_run(paths.runs, args.run)
+    with RunContext(run) as ctx:
+        payload = evaluate_seg(paths, run, ctx, checkpoint=args.ckpt, max_samples=args.limit)
+        ctx.status("done", f"mIoU {payload['mIoU']:.4f}")
+    _emit_json(payload)
+    return EXIT_OK
+
+
+def _register_eval_seg(sub: argparse._SubParsersAction) -> None:
+    parser = sub.add_parser(
+        "eval-seg",
+        help="Evaluate a segmentation run on IDD val.",
+        description=(
+            "Per-class IoU and mIoU, a row-normalised confusion matrix PNG, and qualitative "
+            "overlays. Writes eval/seg_metrics.json inside the run directory."
+        ),
+    )
+    parser.add_argument("--run", required=True, help="Run name, path, or 'latest'.")
+    parser.add_argument("--ckpt", choices=["best", "last"], default="best")
+    parser.add_argument("--limit", type=int, default=None, help="Evaluate at most N samples.")
+    parser.set_defaults(func=_cmd_eval_seg)
+
+
+def _cmd_eval_ctrl(args: argparse.Namespace) -> int:
+    """ADE, FDE, lateral error, and waypoint overlays (sections 6.1, 10)."""
+    from drivyx.eval.ctrl_eval import evaluate_ctrl
+    from drivyx.jobs.run_dir import RunContext, resolve_run
+    from drivyx.torch_setup import configure
+
+    paths = _resolve_paths(args)
+    configure()
+    run = resolve_run(paths.runs, args.run)
+    with RunContext(run) as ctx:
+        payload = evaluate_ctrl(paths, run, ctx, checkpoint=args.ckpt)
+        ctx.status("done", f"ADE {payload['ade']:.4f} m")
+    _emit_json(payload)
+    return EXIT_OK
+
+
+def _register_eval_ctrl(sub: argparse._SubParsersAction) -> None:
+    parser = sub.add_parser(
+        "eval-ctrl",
+        help="Evaluate a control run on the temporal val split.",
+        description=(
+            "ADE, FDE at 2.5 s, and lateral error at 1.0 s in metres, with a per-horizon "
+            "breakdown and a straight-line baseline for context. Writes eval/ctrl_metrics.json."
+        ),
+    )
+    parser.add_argument("--run", required=True, help="Run name, path, or 'latest'.")
+    parser.add_argument("--ckpt", choices=["best", "last"], default="best")
+    parser.set_defaults(func=_cmd_eval_ctrl)
+
+
+# --- export / bench (M7) -----------------------------------------------------------------
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    """ONNX export, TensorRT build, parity, and benchmark (sections 6.1, 11)."""
+    from drivyx.export.onnx_export import export_ctrl, export_seg, verify_onnx
+    from drivyx.export.parity import check_ctrl_parity, check_seg_parity, write_parity
+    from drivyx.export.trt_build import benchmark_engine, build_engine
+    from drivyx.jobs.run_dir import resolve_run
+    from drivyx.torch_setup import configure
+
+    paths = _resolve_paths(args)
+    configure()
+    run = resolve_run(paths.runs, args.run)
+    checkpoint = run.best_ckpt if run.best_ckpt.is_file() else run.last_ckpt
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"no checkpoint in {run.ckpt_dir}")
+
+    paths.export.mkdir(parents=True, exist_ok=True)
+    stem = f"{args.model}_{run.name}"
+    onnx_path = paths.export / f"{stem}.onnx"
+
+    exporter = export_seg if args.model == "seg" else export_ctrl
+    export_result = exporter(checkpoint, onnx_path)
+    payload: dict[str, Any] = {
+        "run": run.name,
+        "checkpoint": checkpoint.name,
+        "export": export_result.to_dict(),
+        "onnx_check": verify_onnx(onnx_path),
+    }
+
+    engine_path = paths.export / f"{stem}_{args.precision}.engine"
+    build = build_engine(onnx_path, engine_path, model=args.model, precision=args.precision)
+    payload["build"] = build.to_dict()
+
+    if not args.skip_bench:
+        bench = benchmark_engine(engine_path)
+        payload["bench"] = bench.to_dict()
+        (paths.export / f"{stem}_{args.precision}_bench.json").write_text(
+            json.dumps(bench.to_dict(), indent=2) + "\n"
+        )
+
+    if not args.skip_parity:
+        checker = check_seg_parity if args.model == "seg" else check_ctrl_parity
+        parity = checker(paths, run, engine_path, args.precision)
+        payload["parity"] = parity.to_dict()
+        write_parity(paths, [parity])
+        if not parity.passed:
+            _emit_json(payload)
+            logger.error(
+                "parity FAILED: %s delta %.4f exceeds tolerance %.4f",
+                parity.metric_name,
+                parity.delta,
+                parity.tolerance,
+            )
+            # Section 11: parity is the only pass/fail gate, and it aborts with exit 1.
+            return EXIT_FAILURE
+
+    _emit_json(payload)
+    return EXIT_OK
+
+
+def _register_export(sub: argparse._SubParsersAction) -> None:
+    parser = sub.add_parser(
+        "export",
+        help="Export a run to ONNX and a TensorRT engine, then check parity and latency.",
+        description=(
+            "Exports at ONNX opset 17 with static batch 1, builds with trtexec at the chosen "
+            "precision, benchmarks the engine, and verifies that the engine agrees with torch. "
+            "Parity failure exits 1."
+        ),
+    )
+    parser.add_argument("--model", choices=["seg", "ctrl"], required=True)
+    parser.add_argument("--run", required=True, help="Run name, path, or 'latest'.")
+    parser.add_argument("--precision", choices=["fp16", "int8"], default="fp16")
+    parser.add_argument("--skip-parity", action="store_true", help="Build without checking parity.")
+    parser.add_argument("--skip-bench", action="store_true", help="Build without timing.")
+    parser.set_defaults(func=_cmd_export)
+
+
+def _cmd_bench(args: argparse.Namespace) -> int:
+    """Benchmark an existing engine (sections 6.1, 11)."""
+    from drivyx.export.trt_build import FRAME_BUDGET_MS, benchmark_engine, budget_status
+
+    paths = _resolve_paths(args)
+    engines = [Path(args.engine)] if args.engine else sorted(paths.export.glob("*.engine"))
+    if not engines:
+        raise FileNotFoundError(f"no engines under {paths.export}. Run 'drivyx export' first.")
+
+    results = [benchmark_engine(e, iterations=args.iterations) for e in engines]
+    total_p50 = sum(r.p50 for r in results)
+    payload = {
+        "engines": [r.to_dict() for r in results],
+        "combined_p50_ms": round(total_p50, 3),
+        "frame_budget_ms": FRAME_BUDGET_MS,
+        "budget_status": budget_status(total_p50),
+    }
+    paths.export.mkdir(parents=True, exist_ok=True)
+    (paths.export / "bench.json").write_text(json.dumps(payload, indent=2) + "\n")
+    _emit_json(payload)
+    return EXIT_OK
+
+
+def _register_bench(sub: argparse._SubParsersAction) -> None:
+    parser = sub.add_parser(
+        "bench",
+        help="Benchmark TensorRT engines against the 33 ms frame budget.",
+        description=(
+            "Times each engine with trtexec, parses the latency percentiles, and reports the "
+            "combined p50 against the frame budget. Writes export/bench.json."
+        ),
+    )
+    parser.add_argument("--engine", default=None, help="One engine (default: all under export/).")
+    parser.add_argument("--iterations", type=int, default=200)
+    parser.set_defaults(func=_cmd_bench)
+
+
 #: Subcommand name -> registration function. Each milestone adds its entries here, and this
 #: mapping is the single source of truth for what the CLI offers (see registered_commands).
 _REGISTRARS: dict[str, Any] = {
@@ -513,6 +694,10 @@ _REGISTRARS: dict[str, Any] = {
     "mm-label": _register_mm_label,
     "train-seg": _register_train_seg,
     "train-ctrl": _register_train_ctrl,
+    "eval-seg": _register_eval_seg,
+    "eval-ctrl": _register_eval_ctrl,
+    "export": _register_export,
+    "bench": _register_bench,
 }
 
 

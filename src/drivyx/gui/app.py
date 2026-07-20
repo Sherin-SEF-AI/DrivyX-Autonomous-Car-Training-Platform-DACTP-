@@ -177,7 +177,7 @@ class MainWindow(QMainWindow):
 
         # Every workspace that owns CLI commands gets the job stream; each filters to the
         # commands it owns, so a job never renders a card in an unrelated workspace.
-        for ws in (self.data_ws, self.label_ws, self.train_ws):
+        for ws in (self.data_ws, self.label_ws, self.train_ws, self.eval_ws, self.export_ws):
             self.queue.job_added.connect(ws.on_job_added)
             self.queue.job_state_changed.connect(ws.on_job_state_changed)
             self.queue.job_finished.connect(ws.on_job_finished)
