@@ -4,6 +4,16 @@ Perception and waypoint control training platform for the India Driving Dataset 
 
 DRIVYX is a CLI first training engine with a PyQt6 desktop application on top. Everything runs on the Orin itself. The engine is fully usable headless over SSH, and the GUI launches CLI subcommands as subprocesses rather than containing any training logic of its own.
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/ea1511af-313c-4ba0-b225-e94d2c1ca2a4" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/c8960785-46e2-49de-9371-88469bdaab7c" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/90ee38cf-727d-4500-9c2f-12e6c118509c" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/edffaca0-858a-4123-8159-65aba1d1d9c3" />
+
+
+
 ## What it produces
 
 Two models trained from IDD data:
