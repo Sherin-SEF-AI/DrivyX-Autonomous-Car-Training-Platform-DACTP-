@@ -335,6 +335,23 @@ class SegTrainer:
                 raise RuntimeError(message)
 
             loss.backward()
+
+            # Gradient clipping is the safety net against divergence. The first run at lr 0.01
+            # with no warmup and SGD momentum 0.9 trained for four epochs then walked out of
+            # its basin: the loss climbed from 29 to over 400 and val mIoU fell from 0.43 to
+            # 0.05 (docs/DECISIONS.md D032). PIDNet's D branch, SPP, and heads start random on
+            # top of a pretrained backbone, so an early bad step can produce a large gradient
+            # that momentum then amplifies. Clipping the global norm bounds that step without
+            # changing the loss the model optimises. A clip of 0 disables it.
+            if self.config.optim.grad_clip > 0:
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.optim.grad_clip
+                )
+                if self.global_step % 10 == 0:
+                    ctx.events.scalar(
+                        "train/grad_norm", float(grad_norm), step=self.global_step, epoch=self.epoch
+                    )
+
             self.optimizer.step()
 
             value = float(loss.detach())

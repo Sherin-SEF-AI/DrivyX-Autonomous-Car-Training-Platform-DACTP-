@@ -58,7 +58,9 @@ optim:
   momentum: 0.9
   weight_decay: 0.0005
   poly_power: 0.9
-  warmup_iters: 0
+  # The first 220-epoch run diverged after epoch 4 without these two (docs/DECISIONS.md D032).
+  warmup_iters: 1000
+  grad_clip: 5.0
 
 # Section 9.1's --probe sizes.
 probe_sizes:

@@ -288,6 +288,49 @@ milestone, and reaches full section 6.1 coverage at M8. A stub subcommand that e
 
 ---
 
+## D032 - The 220-epoch run diverged; fixed with warmup and gradient clipping
+
+**Date:** 2026-07-21
+**Found:** by checking the running application's live curves, not by a test.
+
+The first full run (lr 0.01, SGD momentum 0.9, no warmup, no clipping, the spec's values)
+trained cleanly for four epochs then diverged:
+
+```
+epoch  val mIoU     epoch mean loss
+  4     0.4286        4:  36.4
+  9     0.0495        9:  92.9
+ 19     0.2549       19: 111.9
+ 24     0.2502       27: 407.0   <- peak
+ 34     0.0520       35: 119.1
+```
+
+The loss bottomed at epoch 1 (29.6) and rose roughly 10x. No NaN, no crash: a genuine
+optimisation divergence. best.pt stayed frozen at the epoch-4 weights, so nothing good was
+lost, but 25 hours and 124 projected hours were being spent going the wrong way.
+
+**Cause, confirmed by measurement.** The gradient norm on a real batch is **400**. PIDNet's D
+branch, SPP, and three heads initialise randomly on top of the pretrained backbone, so they
+emit very large gradients early. At lr 0.01 a norm of 400 is a parameter step of about 4, which
+momentum then compounds. warmup_iters was 0 because section 9.1 does not specify warmup, and
+that was the wrong call for this initialisation.
+
+**Fix:**
+
+1. `warmup_iters` default 0 -> 1000. LR ramps linearly from 1e-5 to 0.01 over about one epoch,
+   so the random heads settle before the full-rate schedule begins.
+2. `grad_clip` added, default 5.0. Clips the global gradient norm, which bounds the occasional
+   large step at any point in training, not just the start. This is the load-bearing fix,
+   because the divergence began at epoch 5, past the warmup window. Verified: a real step's
+   norm of 400 clips to 5, turning a step of ~4 into ~0.05.
+
+The peak LR is left at the spec's 0.01. Warmup and clipping are the principled stabilisers; a
+further LR cut would be a larger deviation and is not needed once the gradient norm is bounded.
+
+Both are config fields, so a run that wants the original behaviour can set them to 0.
+
+---
+
 ## D031 - trtexec percentile parsing: two overwrite bugs from one output format
 
 **Date:** 2026-07-20

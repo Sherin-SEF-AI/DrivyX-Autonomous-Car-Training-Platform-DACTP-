@@ -78,11 +78,21 @@ class SegOptimConfig(BaseModel):
     weight_decay: float = Field(5e-4, ge=0.0)
     poly_power: float = Field(0.9, gt=0.0, description="Poly LR decay exponent.")
     warmup_iters: int = Field(
-        0,
+        1000,
         ge=0,
         description=(
-            "Linear warmup steps. Zero by default: section 9.1 does not specify warmup, and "
-            "adding one unasked would change the schedule the spec defines."
+            "Linear warmup steps. The first run without warmup diverged after four epochs "
+            "(docs/DECISIONS.md D032): PIDNet's D branch, SPP, and heads start random on top "
+            "of a pretrained backbone, and a full-rate step into that ruins the run. 1000 "
+            "steps is a bit over one epoch."
+        ),
+    )
+    grad_clip: float = Field(
+        5.0,
+        ge=0.0,
+        description=(
+            "Global gradient-norm clip. Bounds the occasional large step that momentum would "
+            "otherwise amplify into divergence. Zero disables it."
         ),
     )
 
